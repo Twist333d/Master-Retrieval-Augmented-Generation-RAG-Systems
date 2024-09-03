@@ -84,7 +84,8 @@ for score in scores:
     print(score)
 
 print("New Ordering:")
-for o in np.argsort(scores)[::-1]:
+for o in np.argsort(scores)[::-1]: # return the indexes of documents in the reverse order (
+    # highest relevant first)
     print(o + 1)
 
 original_query = (
