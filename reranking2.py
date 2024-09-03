@@ -125,6 +125,9 @@ def generate_multi_query(query, model='gpt-4o-mini'):
 generated_queries = generate_multi_query(original_query)
 joint_query = [query] + generated_queries
 
+# Ensure joint_query is a list of strings
+joint_query = [str(q) for q in joint_query]
+
 #print("Printing all queries:")
 #for q in joint_query:
 #    print(q)
@@ -154,6 +157,9 @@ for doc, distance in zip(expanded_documents, expanded_doc_distances):
     if doc not in unique_documents or distance < unique_documents[doc]:
         unique_documents[doc] = distance
 
+
+unique_documents_list = list(doc for doc in unique_documents.keys())
+
 # Re-rank the document
 pairs = []
 for doc in unique_documents:
@@ -177,7 +183,7 @@ for doc, distance in top_documents_with_distances:
 
 # Concat the docs in a single context
 context = "\n\n".join(top_documents)
-pprint(context)
+#pprint(context)
 
 
 
@@ -205,56 +211,24 @@ import cohere
 co = cohere.Client(os.getenv("COHERE_API_KEY"))
 
 original_query = QUERY
-docs = expanded_results['documents'][0]
+docs = unique_documents
 top_n = 5 # number of results to return
 cohere_results  = co.rerank(model="rerank-english-v3.0", query=query, documents=docs, top_n=5,
 return_documents=True)
 
-pprint(cohere_results )
+pprint(cohere_results)
+
+
 
 # Process Cohere results
-cohere_reranked_docs = [result.document for result in cohere_results]
-cohere_scores = [result.relevance_score for result in cohere_results]
+cohere_reranked_docs = []
+cohere_scores = []
+for result in cohere_results.results:
+    cohere_reranked_docs.append(result.document.text)
+    cohere_scores.append(result.relevance_score)
 
-# Find indices and distances in the original expanded documents
-original_indices = []
-original_distances = []
-
-for doc in cohere_reranked_docs:
-    for i, doc_list in enumerate(expanded_documents):
-        if doc in doc_list:
-            original_indices.append(i)
-            original_distances.append(expanded_results["distances"][i][doc_list.index(doc)])
-            break
-
-# Calculate statistics for Cohere re-ranked results
-def print_relevance_stats(distances, scores, query_type):
-    print(f"\n{query_type} Query Statistics:")
-    print(f"Mean distance: {np.mean(distances):.4f}")
-    print(f"Mean score: {np.mean(scores):.4f}")
-    print(f"Min distance: {np.min(distances):.4f}")
-    print(f"Max distance: {np.max(distances):.4f}")
-    print(f"Standard deviation of distances: {np.std(distances):.4f}")
-
-# Print statistics for original and Cohere re-ranked results
-print_relevance_stats(original_distances, [-1] * len(original_distances), "Original")  # Using -1 as placeholder for original scores
-print_relevance_stats(original_distances, cohere_scores, "Cohere Re-ranked")
-
-# Compare improvement
-mean_distance_improvement = np.mean(original_distances) - np.mean(expanded_results["distances"][0][:5])
-print(f"\nMean distance improvement: {mean_distance_improvement:.4f}")
-
-# Print re-ranked results
-print("\nCohere Re-ranked Results:")
-for i, (doc, score, distance) in enumerate(zip(cohere_reranked_docs, cohere_scores, original_distances)):
-    print(f"Rank {i+1}:")
-    print(f"Document: {doc[:100]}...")  # Print first 100 characters
-    print(f"Cohere Score: {score:.4f}")
-    print(f"Original Distance: {distance:.4f}")
-    print(f"Original Query Index: {original_indices[i]}")
-    print()
-
-# Additional analysis
-print("\nAdditional Analysis:")
-print(f"Number of documents changed in top 5: {len(set(original_indices[:5]) - set(range(5)))}")
-print(f"Average Cohere score: {np.mean(cohere_scores):.4f}")
+print("Cohere results:")
+for docs, scores in zip(cohere_reranked_docs, cohere_scores):
+    print(f"Score: {scores:.4f}")
+    print(word_wrap(docs))
+    print("\n")
