@@ -58,7 +58,7 @@ chroma_collection.add(
 )
 
 # Get original documents
-QUERY = "What were the most important factors that contributed to increases in revenue?"
+QUERY = "How did gaming segment perform this year in comparison to last year?"
 
 response = chroma_collection.query(
     query_texts=[QUERY],
@@ -145,11 +145,11 @@ pprint(expanded_results)
 expanded_documents = expanded_results['documents'][0]
 expanded_doc_distances = expanded_results['distances'][0]
 
-print("Expanded retrieved documents:")
-for doc, distance in zip(expanded_documents, expanded_doc_distances):
-    print(f"Distance: {distance:.2f}")
-    print(word_wrap(doc))
-    print("\n")
+#print("Expanded retrieved documents:")
+#for doc, distance in zip(expanded_documents, expanded_doc_distances):
+#    print(f"Distance: {distance:.2f}")
+#    print(word_wrap(doc))
+#    print("\n")
 
 # de-duplicate
 unique_documents = {}
@@ -170,65 +170,76 @@ scores = cross_encoder.predict(pairs)
 top_indices = np.argsort(scores)[::-1][:5] # select only 5
 top_documents = [list(unique_documents.keys())[i] for i in top_indices]
 top_distances = [unique_documents[doc] for doc in top_documents]
-
-
 top_documents_with_distances = list(zip(top_documents, top_distances))
 top_5_distances = [distance for _, distance in top_documents_with_distances]
 
-print("Top 5 documents with distances:")
-for doc, distance in top_documents_with_distances:
-    print(f"Distance: {distance:.4f}")
-    print(word_wrap(doc))
-    print("\n")
+#print("Top 5 documents with distances:")
+#for doc, distance in top_documents_with_distances:
+#    print(f"Distance: {distance:.4f}")
+#    print(word_wrap(doc))
+#    print("\n")
 
 # Concat the docs in a single context
 context = "\n\n".join(top_documents)
 #pprint(context)
 
-
-
-def print_summary_stats(original_results):
-    print("\n==== Summary Statistics ====\n")
-
-    # 1. Average distance for original and re-ranked results
-    original_avg_distance = np.mean(original_results['distances'][0])
-    mean_distance_top_5 = np.mean(top_5_distances)
-
-    print(f"Original query average distance: {original_avg_distance:.4f}")
-    print(f"Re-ranked average distance: {mean_distance_top_5:.4f}")
-    print(f"Distance improvement: {original_avg_distance - mean_distance_top_5:.4f}")
-
-    # 5. Overall improvement percentage
-    improvement_percentage = ((original_avg_distance - mean_distance_top_5) / original_avg_distance) * 100
-    print(f"\nOverall distance improvement percentage: {improvement_percentage:.2f}%")
-
-# Add this line at the end of your script to call the function
-#print_summary_stats(original_results)
-
-
-# checking the results with Cohere
 import cohere
 co = cohere.Client(os.getenv("COHERE_API_KEY"))
 
 original_query = QUERY
-docs = unique_documents
+docs = unique_documents_list
 top_n = 5 # number of results to return
-cohere_results  = co.rerank(model="rerank-english-v3.0", query=query, documents=docs, top_n=5,
+cohere_results  = co.rerank(model="rerank-english-v3.0", query=query, documents=docs, top_n=top_n,
 return_documents=True)
 
-pprint(cohere_results)
+def process_cohere_results(cohere_response, relevance_threshold=0.01, print_results=False):
+    """Processes cohere results
+    removes results below relevance threshold
+    prints the result"""
+    processed_results = []
 
+    for result in cohere_response.results:
+        relevance_score = result.relevance_score
+        if relevance_score >= relevance_threshold:
+            doc = result.document.text
+            entry = f"Relevance score: {relevance_score:.3f}\n Document: {doc}"
+            processed_results.append(entry)
 
+    if print_results:
+        print("PRINTING COHERE PROCESSING RESULTS")
+        for result in processed_results:
+            print(result)
 
-# Process Cohere results
-cohere_reranked_docs = []
-cohere_scores = []
-for result in cohere_results.results:
-    cohere_reranked_docs.append(result.document.text)
-    cohere_scores.append(result.relevance_score)
+    return processed_results
 
-print("Cohere results:")
-for docs, scores in zip(cohere_reranked_docs, cohere_scores):
-    print(f"Score: {scores:.4f}")
-    print(word_wrap(docs))
-    print("\n")
+context = process_cohere_results(cohere_results)
+#print(context)
+
+def final_answer_generation(query, context, model="gpt-4o-mini"):
+
+    prompt = (f"You are a knowledgable financial research assistant. Your users are inquiring about an annual report."
+              f"You will be given context, extracted by an LLM that will help in answering the "
+              f"questions. Each context has a relevance score and the document itself"
+              f"If the provided context is not relevant, please inform the user that you can not "
+              f"answer the question based on the provided information."
+              f"If the provided context is relevant, answer the question based on the contex")
+
+    messages = [
+        {'role': 'system', 'content': prompt},
+        {'role': 'user', 'content': f"Context: \n\n{context}\n\n."
+                                    f"Answer the questions based on the provided context."
+                                    f"Question: {query}"},
+    ]
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=messages,
+    )
+
+    content = response.choices[0].message.content
+    #content = content.split('\n')
+    return content
+
+res = final_answer_generation(original_query, context, model="gpt-4o-mini")
+print("REPLY:")
+print(res)
